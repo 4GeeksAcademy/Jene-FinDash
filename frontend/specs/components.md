@@ -1,11 +1,5 @@
 # Component Specifications — Dashboard Extensions
 
-> **Purpose:** Frontend architecture specs only (no implementation).  
-> **Contracts:** [`api-types.ts`](./api-types.ts), [`param-types.ts`](./param-types.ts).  
-> **Conventions:** `.agents/rules/dashboard-ui-structure.md`, `api-contracts-and-errors.md`, `pure-domain-logic.md`.
-
----
-
 ## Shared shell (routing)
 
 ```text
