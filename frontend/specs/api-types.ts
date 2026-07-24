@@ -1,11 +1,11 @@
 /**
  * Strict API response contracts for dashboard extension features.
  *
- * Derived from `frontend/specs/date-range.md`, `anomaly-alerts.md`, and `b2bvsb2c.md`,
- * aligned with Pydantic models in `backend/app/routes.py`.
+ * Spec-only module: types and JSDoc only (no runtime values, functions, or framework imports).
+ * Aligned with Pydantic / OpenAPI schemas from `backend/app/routes.py` and `/docs`.
+ * See `README.md` and `components.md` in this directory.
  *
- * These types intentionally live under `frontend/specs/` as the typed contract layer
- * for upcoming UI work. Do not use `any` or `object`.
+ * Do not use `any` or `object`.
  */
 
 /**

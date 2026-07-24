@@ -1,14 +1,37 @@
 /**
  * Strict query-parameter contracts for dashboard extension API calls.
  *
- * Derived from `frontend/specs/date-range.md`, `anomaly-alerts.md`, and `b2bvsb2c.md`,
- * aligned with FastAPI `Query` definitions in `backend/app/routes.py`.
+ * Spec-only module: types and JSDoc only (no runtime values, functions, or framework imports).
+ * Aligned with FastAPI `Query` definitions in `backend/app/routes.py` and OpenAPI `/docs`.
+ * See `README.md` and `components.md` in this directory.
  *
  * Serialize only defined properties into the query string; omit `undefined` keys.
  * Do not use `any` or `object`.
  */
 
-import type { BusinessType, IsoDateString, OperationType } from "./api-types";
+/**
+ * Calendar date string in ISO-8601 calendar-date form.
+ *
+ * @remarks
+ * - **Format:** `YYYY-MM-DD` (example: `"2025-03-15"`).
+ */
+export type IsoDateString = string;
+
+/**
+ * Movement direction literal matching backend `OperationType`.
+ *
+ * @remarks
+ * - **Valid values:** `"income"` | `"outcome"` only.
+ */
+export type OperationType = "income" | "outcome";
+
+/**
+ * Commercial segment literal matching backend `BusinessType`.
+ *
+ * @remarks
+ * - **Valid values:** `"B2B"` | `"B2C"` only (exact casing).
+ */
+export type BusinessType = "B2B" | "B2C";
 
 /**
  * Optional inclusive date bounds shared by metrics, alerts, and top-categories requests.

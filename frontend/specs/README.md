@@ -1,204 +1,240 @@
 # Frontend Specs — Data Contract Documentation
 
-> **Scope:** This document specifies the frontend data contracts for three dashboard extension features. It does **not** implement React components, application runtime logic, or live client calls.  
-> **Verified against:** Live OpenAPI at `http://localhost:8000/openapi.json` (FastAPI `/docs`), `backend/app/routes.py`, and typed contracts in `api-types.ts` / `param-types.ts`.  
-> **Transport:** Browser calls relative `/api/...` (Vite proxies to `http://backend:8000`). Optional absolute base: `VITE_API_BASE_URL`. All feature endpoints are **GET** with **query parameters only** — no request bodies.
+> Spec-only documentation for Features 1–3. Verified against live OpenAPI at `GET http://localhost:8000/openapi.json` (FastAPI `/docs`).  
+> Transport: relative `/api/...` via Vite proxy → `http://backend:8000`. All consumed endpoints are **GET** with **query parameters only** (no request bodies).
 
-| Feature | Spec ID | Detail spec |
-|---------|---------|-------------|
-| Date range filter | `FE-DATE-RANGE` | [`date-range.md`](./date-range.md) |
-| Anomaly alerts table | `FE-ANOMALY-ALERTS` | [`anomaly-alerts.md`](./anomaly-alerts.md) |
-| B2B vs B2C comparison page | `FE-B2B-VS-B2C` | [`b2bvsb2c.md`](./b2bvsb2c.md) |
+| Feature | Spec ID | Spec files |
+|---------|---------|------------|
+| Date Range Filter | `FE-DATE-RANGE` | This README + [`components.md`](./components.md) + types |
+| Anomaly Alerts Table | `FE-ANOMALY-ALERTS` | This README + [`components.md`](./components.md) + types |
+| B2B vs B2C Comparison View | `FE-B2B-VS-B2C` | This README + [`components.md`](./components.md) + types |
 
-Shared TypeScript contracts:
+**Allowed files in this directory (spec-only; no React/UI implementation):**
 
-- Responses & view models → [`api-types.ts`](./api-types.ts)
-- Query parameter objects → [`param-types.ts`](./param-types.ts)
-- Component architecture (non-executable) → [`components.md`](./components.md)
+- [`api-types.ts`](./api-types.ts) — response / view-model types + JSDoc
+- [`param-types.ts`](./param-types.ts) — query-parameter types + JSDoc
+- [`components.md`](./components.md) — component architecture (non-executable)
+- [`README.md`](./README.md) — this data contract documentation
+
+Do **not** add React components, hooks, fetch helpers, or other runtime UI code under `frontend/specs/` or as part of this specification workstream.
 
 ---
 
 ## Feature 1 — Date Range Filter (`FE-DATE-RANGE`)
 
-### 1.1 Consumed endpoints
+### 1. Endpoints
 
-| Role | Method | Path (OpenAPI) | Request body | Success | Validation failure |
-|------|--------|----------------|--------------|---------|-------------------|
-| Available data range | `GET` | `/api/metrics/facets` | none | `200` → `MetricsFacets` | none listed (no query params) |
-| Filtered dashboard movements | `GET` | `/api/metrics` | none | `200` → `FinancialMovement[]` | `422` → `HTTPValidationError` |
-
-OpenAPI confirmation (`/openapi.json`):
-
-- `GET /api/metrics/facets` — no parameters; response schema `MetricsFacets`.
-- `GET /api/metrics` — optional query: `start_date`, `end_date`, `category`, `operation_type` (this feature uses **only** the date pair).
-
-Proxy form used by the frontend:
+| Role | Method | Path (OpenAPI `/docs`) | Body | Success | Error |
+|------|--------|------------------------|------|---------|-------|
+| Available data range | `GET` | `/api/metrics/facets` | none | `200` → `MetricsFacets` | — (no query params) |
+| Filtered movements for KPIs/charts | `GET` | `/api/metrics` | none | `200` → `FinancialMovement[]` | `422` → `HTTPValidationError` |
 
 ```http
 GET /api/metrics/facets
+GET /api/metrics
+GET /api/metrics?start_date=YYYY-MM-DD
+GET /api/metrics?end_date=YYYY-MM-DD
 GET /api/metrics?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
 ```
 
-Omit a date query key when the corresponding input is empty.
+This feature does **not** send `category` or `operation_type` on `/api/metrics` (those query params exist in OpenAPI but are out of scope).
 
-### 1.2 Data mappings
+### 2. TypeScript types
 
-| Network concern | TypeScript type | Module |
-|-----------------|-----------------|--------|
-| Facets response (wire) | `FacetsResponse` | `api-types.ts` |
-| Date-range UI slice | `AvailableDateRange` (`min_date`, `max_date`) | `api-types.ts` |
-| Metrics query params | `DateRangeFilter` | `param-types.ts` |
-| Metrics response (wire) | `FinancialMovement[]` (existing app type in `src/lib/financial-types.ts`; same shape as OpenAPI `FinancialMovement`) | app lib |
-| Request payload | *None* — GET only | — |
+#### Request parameters
 
-**`FacetsResponse` ↔ OpenAPI `MetricsFacets`**
+```ts
+/** Calendar date string. Format: YYYY-MM-DD (OpenAPI `format: date`). */
+type IsoDateString = string;
 
-| Property | TS type | OpenAPI |
-|----------|---------|---------|
-| `operation_types` | `OperationType[]` | `string[]` enum `income` \| `outcome` |
-| `business_types` | `BusinessType[]` | `string[]` enum `B2B` \| `B2C` |
-| `categories` | `Category[]` | `string[]` enum of five categories |
-| `min_date` | `IsoDateString` | `string` `format: date` |
-| `max_date` | `IsoDateString` | `string` `format: date` |
+/**
+ * Query object for GET /api/metrics (date bounds only).
+ * Omit a property (or leave empty in the UI) to exclude that query key.
+ */
+interface DateRangeFilter {
+  /** Inclusive lower bound → query `start_date`. Optional. */
+  start_date?: IsoDateString;
+  /** Inclusive upper bound → query `end_date`. Optional. */
+  end_date?: IsoDateString;
+}
 
-**`DateRangeFilter` → query string**
+/** GET /api/metrics/facets takes no request parameters. */
+type FacetsRequestParams = Record<string, never>;
+```
 
-| Property | Query name | Sent when |
-|----------|------------|-----------|
-| `start_date` | `start_date` | Defined non-empty string |
-| `end_date` | `end_date` | Defined non-empty string |
+#### Response payloads
 
-**`FinancialMovement` (metrics response element)**
+```ts
+type OperationType = "income" | "outcome";
+type Category =
+  | "suppliers"
+  | "sales"
+  | "operational"
+  | "administrative"
+  | "others";
+type BusinessType = "B2B" | "B2C";
 
-| Property | Type | OpenAPI |
-|----------|------|---------|
-| `create_date` | `string` (`format: date`) | required |
-| `amount` | `number` | required |
-| `operation_type` | `"income"` \| `"outcome"` | required |
-| `category` | Category enum | required |
-| `business_type` | `"B2B"` \| `"B2C"` | required |
+/** OpenAPI schema title: MetricsFacets */
+interface FacetsResponse {
+  operation_types: OperationType[];
+  business_types: BusinessType[];
+  categories: Category[];
+  /** YYYY-MM-DD — earliest create_date */
+  min_date: IsoDateString;
+  /** YYYY-MM-DD — latest create_date */
+  max_date: IsoDateString;
+}
 
-### 1.3 Parameter validations
+/** Slice used for the available-range hint and input min/max. */
+interface AvailableDateRange {
+  min_date: IsoDateString;
+  max_date: IsoDateString;
+}
+
+/** OpenAPI schema title: FinancialMovement (array element of GET /api/metrics) */
+interface FinancialMovement {
+  create_date: IsoDateString;
+  amount: number;
+  operation_type: OperationType;
+  category: Category;
+  business_type: BusinessType;
+}
+
+type MetricsResponse = FinancialMovement[];
+```
+
+### 3. Parameters & constraints
 
 #### `GET /api/metrics/facets`
 
-| Parameter | Constraints |
-|-----------|-------------|
-| *(none)* | No query, path, or body parameters. |
+| Param | Type | Required | Default | Constraints |
+|-------|------|----------|---------|-------------|
+| *(none)* | — | — | — | No query, path, or body fields |
 
-#### `GET /api/metrics` (feature-used params)
+#### `GET /api/metrics`
 
-| Parameter | Data type | Format | Required | Constraints |
-|-----------|-----------|--------|----------|-------------|
-| `start_date` | `string` \| omitted | `YYYY-MM-DD` (`format: date`) | No | Inclusive lower bound; invalid date string → API `422` |
-| `end_date` | `string` \| omitted | `YYYY-MM-DD` (`format: date`) | No | Inclusive upper bound; invalid date string → API `422` |
-| `category` | — | — | — | **Not used** by this feature |
-| `operation_type` | — | — | — | **Not used** by this feature |
+| Param | Type | Format | Required | Default | Constraints |
+|-------|------|--------|----------|---------|-------------|
+| `start_date` | `string` \| omitted | `YYYY-MM-DD` | No | omit | Inclusive `create_date >= start_date`. Invalid date → `422`. |
+| `end_date` | `string` \| omitted | `YYYY-MM-DD` | No | omit | Inclusive `create_date <= end_date`. Invalid date → `422`. |
+| `category` | enum \| null | — | No | null | **Not used** by this feature |
+| `operation_type` | `income` \| `outcome` \| null | — | No | null | **Not used** by this feature |
 
-#### Frontend-enforced (before calling metrics)
+#### Frontend-enforced rules
 
-| Rule | Constraint | On violation |
-|------|------------|--------------|
-| Date format | Each filled input must be `YYYY-MM-DD` | Block request; show field validation |
-| Sequence | If both set: `start_date <= end_date` | Block request; inline message e.g. “Start date must be on or before end date” |
-| UX bounds | Prefer `min`/`max` from `FacetsResponse.min_date` / `max_date` | Guidance only; does not replace sequence validation |
+| Rule | Valid values / format | On violation |
+|------|----------------------|--------------|
+| Date format | `YYYY-MM-DD` when filled | Block request; field validation |
+| One-sided fill | Start-only or end-only is **valid** | Send only the filled query key |
+| Both filled | `start_date <= end_date` | Block request; show sequence error |
+| UX bounds | Prefer facets `min_date`/`max_date` as input `min`/`max` | Guidance only |
 
-### 1.4 Edge case scenarios
+### 4. UI edge cases
 
-| # | Scenario | Required UI state / layout |
-|---|----------|----------------------------|
-| 1 | **Invalid date sequence** — user sets `start_date` after `end_date` | Do **not** call `/api/metrics`. Keep previous KPI/chart data visible (or last-good snapshot). Show inline validation on the date-range control. Available-range label from facets (if loaded) remains visible. |
-| 2 | **Empty filtered dataset** — valid range yields `[]` from `/api/metrics` (HTTP 200) | KPIs show zero / em-dash per existing empty metric rules; charts show their established “No data available to display” empty bodies; date inputs and “Available data: min → max” remain. Do not show a global hard-error banner solely because the list is empty. |
-| 3 | **Facets network failure / timeout** | Date inputs stay usable without `min`/`max` attributes. Show “available range unavailable” (or equivalent) beside inputs. Metrics may still load unfiltered or with user-typed dates. Surface facets failure without discarding metrics error detail if both fail. |
-| 4 | **Metrics network failure / timeout** after a date change | Show the shared dashboard error banner (English). Retain prior successful metrics on screen if the product chooses stale-while-revalidate; otherwise clear KPIs/charts to loading→error. Never use an empty `.catch` that drops the error object. |
+| # | API / data edge case | Exact UI render |
+|---|----------------------|-----------------|
+| 1 | **Empty filtered dataset** — `GET /api/metrics` returns `200` with `[]` for a valid date filter | Keep `DateRangeFilter` visible with current inputs. Show available-range hint if facets OK. KPIs show zero/em-dash empty metric presentation. Charts show existing empty body: `No data available to display`. Do **not** show a hard global error solely because the array is empty. |
+| 2 | **Invalid date sequence** — both inputs filled and `start_date > end_date` | Do **not** call `/api/metrics`. Keep last successful KPIs/charts. Under the date controls render alert text: `Start date must be on or before end date.` |
+| 3 | **Facets timeout / non-OK** | Inputs remain enabled without `min`/`max`. Hint line: `Available data range unavailable.` Metrics may still load (unfiltered or with typed dates). |
+| 4 | **Only one date filled** | Refetch immediately with a single query param (`start_date` or `end_date` only). No sequence validation error. Hint unchanged. |
 
 ---
 
-## Feature 2 — Anomaly Alerts (`FE-ANOMALY-ALERTS`)
+## Feature 2 — Anomaly Alerts Table (`FE-ANOMALY-ALERTS`)
 
-### 2.1 Consumed endpoints
+### 1. Endpoints
 
-| Role | Method | Path (OpenAPI) | Request body | Success | Validation failure |
-|------|--------|----------------|--------------|---------|-------------------|
+| Role | Method | Path (OpenAPI `/docs`) | Body | Success | Error |
+|------|--------|------------------------|------|---------|-------|
 | Outcome anomaly rows | `GET` | `/api/metrics/alerts` | none | `200` → `MetricsAlert[]` | `422` → `HTTPValidationError` |
-
-OpenAPI confirmation:
-
-- Path: `/api/metrics/alerts`
-- Query: `threshold` (number, `minimum: 0`, default `0.3`), `group_by` (enum `day`\|`week`\|`month`, default `month`), `start_date`, `end_date`, `business_type`
-- This feature **consumes** `threshold` (required by product UI) and optionally `start_date` / `end_date` when the date-range filter is active
-- This feature **does not** expose UI for `group_by` or `business_type` (defaults / omitted)
 
 ```http
 GET /api/metrics/alerts?threshold=0.3
 GET /api/metrics/alerts?threshold=0.3&start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
 ```
 
-### 2.2 Data mappings
+OpenAPI also documents `group_by` (`day` \| `week` \| `month`, default `month`) and `business_type` (`B2B` \| `B2C`). This feature **does not expose UI** for those params; omit them (API defaults apply: `group_by=month`).
 
-| Network concern | TypeScript type | Module |
-|-----------------|-----------------|--------|
-| Query params | `AlertsParams` (`threshold` + `DateRangeFilter`) | `param-types.ts` |
-| Single row | `AlertEntry` | `api-types.ts` |
-| Response list | `AlertsResponse` (`AlertEntry[]`) | `api-types.ts` |
-| Request payload | *None* — GET only | — |
+### 2. TypeScript types
 
-**`AlertEntry` ↔ OpenAPI `MetricsAlert` (all required)**
+#### Request parameters
 
-| Property | TS type | UI column | Display |
-|----------|---------|-----------|---------|
-| `period` | `string` | Period | Raw (e.g. `YYYY-MM` when `group_by=month`) |
-| `outcome_total` | `number` | Recorded outcome | Currency |
-| `baseline_average` | `number` | “Rolling average of previous 3 periods” (label) | Currency — **bind API field; do not recompute a 3-period window** |
-| `increase_ratio` | `number` | Percentage increase | `(increase_ratio * 100)` → percent string |
+```ts
+type IsoDateString = string;
 
-**`AlertsParams` → query string**
+interface DateRangeFilter {
+  start_date?: IsoDateString; // YYYY-MM-DD
+  end_date?: IsoDateString;   // YYYY-MM-DD
+}
 
-| Property | Query name | Notes |
-|----------|------------|-------|
-| `threshold` | `threshold` | Decimal ratio, e.g. `0.3` |
-| `start_date` | `start_date` | Optional; from shared date filter |
-| `end_date` | `end_date` | Optional; from shared date filter |
+/**
+ * Query object for GET /api/metrics/alerts.
+ * Extends shared date bounds when the overview date filter is active.
+ */
+interface AlertsParams extends DateRangeFilter {
+  /**
+   * Decimal ratio. UI default 0.3.
+   * Product UI range: 0.01–1.0. API allows minimum 0.
+   */
+  threshold: number;
+}
+```
 
-OpenAPI also allows `group_by` and `business_type`; they are **out of scope** for this feature’s TypeScript param object unless extended later.
+#### Response payloads
 
-### 2.3 Parameter validations
+```ts
+/** OpenAPI schema title: MetricsAlert */
+interface AlertEntry {
+  /** Period key (e.g. YYYY-MM when group_by=month) */
+  period: string;
+  /** Period outcome total */
+  outcome_total: number;
+  /**
+   * Baseline average of prior periods in the series
+   * (API field; UI column label may say “previous 3 periods”).
+   */
+  baseline_average: number;
+  /**
+   * (outcome_total - baseline_average) / baseline_average
+   * Included only when ratio > threshold; API rounds to 4 decimals.
+   */
+  increase_ratio: number;
+}
 
-| Parameter | Data type | Format / values | Required (product) | Constraints |
-|-----------|-----------|-----------------|--------------------|-------------|
-| `threshold` | `number` | Decimal ratio | **Yes** (UI always sends) | **UI:** `0.01`–`1.0` inclusive, step `0.01`, default `0.3`. **API:** `minimum: 0`, default `0.3`. Do not send UI values outside `0.01`–`1.0`. |
-| `start_date` | `string` \| omitted | `YYYY-MM-DD` | No | Same as date-range feature; API `422` on bad format |
-| `end_date` | `string` \| omitted | `YYYY-MM-DD` | No | Must be `>= start_date` when both set (frontend) |
-| `group_by` | — | `day` \| `week` \| `month` | No (omit; API default `month`) | Not exposed in UI for this feature |
-| `business_type` | — | `B2B` \| `B2C` | No | Not exposed in UI for this feature |
+/** Wire shape: JSON array (not an envelope object) */
+type AlertsResponse = AlertEntry[];
+```
 
-### 2.4 Edge case scenarios
+### 3. Parameters & constraints
 
-| # | Scenario | Required UI state / layout |
-|---|----------|----------------------------|
-| 1 | **Completely empty alerts list** — HTTP `200` with `[]` (e.g. high threshold such as `1.0`, or no spikes) | Render the anomaly **section** (title + threshold control). Do **not** show a header-only empty `<table>`. Show explicit empty copy in the body, e.g. “No outcome anomalies detected for the current threshold.” |
-| 2 | **Network timeout / non-OK alerts response** | Keep threshold control visible. Replace table with section-level error message; log/retain status or error detail. Do not clear the rest of the dashboard solely because alerts failed. |
-| 3 | **Out-of-range threshold input** (e.g. `0` or `1.5`) | Clamp or block before fetch; do not call the API with values outside `0.01`–`1.0`. Show control validation feedback. |
-| 4 | **Invalid date sequence** inherited from the shared date filter while alerts are mounted | Do not call `/api/metrics/alerts` with that invalid pair; same validation gate as Feature 1. Alerts section may show last-good alerts or a short “fix dates to refresh alerts” note. |
+| Param | Type | Format / values | Required (product) | Default | Constraints |
+|-------|------|-----------------|--------------------|---------|-------------|
+| `threshold` | `number` | Decimal ratio (e.g. `0.3`, not `30`) | **Yes** (UI always sends) | `0.3` | **UI:** `0.01`–`1.0` inclusive, step `0.01`. **API:** `minimum: 0`. Semantics: alert when increase ratio **>** threshold. |
+| `start_date` | `string` \| omitted | `YYYY-MM-DD` | No | omit | Pass through from Feature 1 when set |
+| `end_date` | `string` \| omitted | `YYYY-MM-DD` | No | omit | Must be `>= start_date` when both set (frontend gate) |
+| `group_by` | `day` \| `week` \| `month` | enum | No (omit) | `month` | Not exposed in UI |
+| `business_type` | `B2B` \| `B2C` \| null | enum | No (omit) | null | Not exposed in UI |
+
+### 4. UI edge cases
+
+| # | API / data edge case | Exact UI render |
+|---|----------------------|-----------------|
+| 1 | **Empty alerts list** — `200` with `[]` (e.g. high threshold, no spikes) | Keep section title `Anomaly alerts` and threshold input. **Do not** render a `<table>` or header-only table. Body text exactly: `No outcome anomalies detected for the current threshold.` |
+| 2 | **Network timeout / non-OK** on `/api/metrics/alerts` | Keep threshold control. Replace table/empty area with `<p role="alert">` containing the failure message. Preserve error detail for debugging. Do not clear the rest of the overview dashboard. |
+| 3 | **Out-of-range threshold** (`< 0.01` or `> 1.0`) | Under the input show: `Threshold must be between 0.01 and 1.0.` Do **not** call the alerts endpoint. Retain last successful alerts (or prior empty state). |
+| 4 | **Non-empty alerts** | Four-column table only: `Period` (`string`), `Recorded outcome` (`number`→currency), `Rolling average of previous 3 periods` (`baseline_average`→currency), `Percentage increase` (`increase_ratio * 100`→ percent string). |
 
 ---
 
-## Feature 3 — B2B vs B2C Comparison Page (`FE-B2B-VS-B2C`)
+## Feature 3 — B2B vs B2C Comparison View (`FE-B2B-VS-B2C`)
 
-### 3.1 Consumed endpoints
+### 1. Endpoints
 
-| Role | Method | Path (OpenAPI) | Request body | Success | Validation failure |
-|------|--------|----------------|--------------|---------|-------------------|
+| Role | Method | Path (OpenAPI `/docs`) | Body | Success | Error |
+|------|--------|------------------------|------|---------|-------|
 | Segment presence + date context | `GET` | `/api/metrics/facets` | none | `200` → `MetricsFacets` | — |
 | Top income categories (B2B) | `GET` | `/api/metrics/categories/top` | none | `200` → `TopCategoryItem[]` | `422` |
 | Top income categories (B2C) | `GET` | `/api/metrics/categories/top` | none | `200` → `TopCategoryItem[]` | `422` |
-
-OpenAPI confirmation for `/api/metrics/categories/top`:
-
-- Query: `operation_type` (enum, default **`outcome`**), `limit` (integer `1`–`20`, default `5`), `start_date`, `end_date`, `business_type` (`B2B`\|`B2C`\|null)
-- Response: array of `TopCategoryItem`
-
-**Required calls for this feature:**
 
 ```http
 GET /api/metrics/facets
@@ -206,87 +242,122 @@ GET /api/metrics/categories/top?operation_type=income&limit=5&business_type=B2B
 GET /api/metrics/categories/top?operation_type=income&limit=5&business_type=B2C
 ```
 
-**Not consumed** by this feature’s contract: `/api/metrics/b2b`, `/api/metrics/b2c` (movement lists exist in OpenAPI but are out of scope per `b2bvsb2c.md`).
+**Not consumed** by this feature: `/api/metrics/b2b`, `/api/metrics/b2c` (exist in `/docs` but out of scope).
 
-### 3.2 Data mappings
+### 2. TypeScript types
 
-| Network concern | TypeScript type | Module |
-|-----------------|-----------------|--------|
-| Facets response | `FacetsResponse` | `api-types.ts` |
-| Top-categories query | `TopCategoriesParams` | `param-types.ts` |
-| Top-categories row | `CategoryEntry` | `api-types.ts` |
-| Top-categories response | `TopCategoriesResponse` (`CategoryEntry[]`) | `api-types.ts` |
-| Table row (+ client %) | `CategoryEntryWithShare` | `api-types.ts` |
-| Page view model | `B2BVsB2CViewData` | `api-types.ts` |
-| Request payload | *None* — GET only | — |
+#### Request parameters
 
-**`CategoryEntry` ↔ OpenAPI `TopCategoryItem`**
+```ts
+type IsoDateString = string;
+type OperationType = "income" | "outcome";
+type BusinessType = "B2B" | "B2C";
 
-| Property | TS / OpenAPI | UI |
-|----------|--------------|----|
-| `category` | Category enum | Category name |
-| `operation_type` | `income` \| `outcome` | Expect `income` for this page |
-| `total_amount` | `number` | Total income (currency) |
+interface DateRangeFilter {
+  start_date?: IsoDateString;
+  end_date?: IsoDateString;
+}
 
-**Client-only mapping (not on the wire):**
+/**
+ * Query object for GET /api/metrics/categories/top.
+ * For this feature always send operation_type: "income", limit: 5,
+ * and business_type: "B2B" | "B2C" on separate requests.
+ */
+interface TopCategoriesParams extends DateRangeFilter {
+  operation_type: OperationType;
+  /** Integer 1–20 (OpenAPI). Feature value: 5. */
+  limit: number;
+  business_type?: BusinessType;
+}
 
-| Derived field | Type | Rule |
-|---------------|------|------|
-| `percentOfTotal` | `number` | `(total_amount / Σ total_amount in that segment’s response) * 100` |
+/** Facets request: no parameters */
+type FacetsRequestParams = Record<string, never>;
+```
 
-**`TopCategoriesParams` → query (per segment request)**
+#### Response payloads
 
-| Property | Query name | Feature value |
-|----------|------------|---------------|
-| `operation_type` | `operation_type` | Always `"income"` (must override API default `"outcome"`) |
-| `limit` | `limit` | `5` |
-| `business_type` | `business_type` | `"B2B"` or `"B2C"` |
-| `start_date` / `end_date` | same | Optional later; omit unless date filter is wired globally |
+```ts
+type Category =
+  | "suppliers"
+  | "sales"
+  | "operational"
+  | "administrative"
+  | "others";
 
-### 3.3 Parameter validations
+/** OpenAPI: MetricsFacets */
+interface FacetsResponse {
+  operation_types: OperationType[];
+  business_types: BusinessType[];
+  categories: Category[];
+  min_date: IsoDateString;
+  max_date: IsoDateString;
+}
+
+/** OpenAPI: TopCategoryItem */
+interface CategoryEntry {
+  category: Category;
+  operation_type: OperationType;
+  /** Aggregated amount; API rounds to 2 decimals */
+  total_amount: number;
+}
+
+/** Wire shape: JSON array */
+type TopCategoriesResponse = CategoryEntry[];
+
+/** Client-enriched row for ranking tables (not on the wire) */
+interface CategoryEntryWithShare extends CategoryEntry {
+  /**
+   * (total_amount / sum(total_amount in same response)) * 100
+   * Range 0–100 when sum > 0.
+   */
+  percentOfTotal: number;
+}
+
+interface B2BVsB2CViewData {
+  availableRange: { min_date: IsoDateString; max_date: IsoDateString };
+  businessTypesPresent: BusinessType[];
+  b2bCategories: CategoryEntryWithShare[];
+  b2cCategories: CategoryEntryWithShare[];
+}
+```
+
+### 3. Parameters & constraints
 
 #### `GET /api/metrics/facets`
 
-Same as Feature 1 — no parameters.
+No parameters (same as Feature 1).
 
 #### `GET /api/metrics/categories/top`
 
-| Parameter | Data type | Valid values | Required (product) | Constraints |
-|-----------|-----------|--------------|--------------------|-------------|
-| `operation_type` | `string` enum | `income` \| `outcome` | **Yes** — always send `income` | OpenAPI default is `outcome` if omitted — omitting is a **spec defect** for this page |
-| `limit` | `integer` | `1`–`20` | **Yes** — send `5` | OpenAPI `minimum: 1`, `maximum: 20`, default `5`; values outside range → `422` |
-| `business_type` | `string` enum \| omitted | `B2B` \| `B2C` | **Yes** for each of the two calls | Exact casing; null/omit returns unsegmented top categories (wrong for this UI) |
-| `start_date` | `string` \| omitted | `YYYY-MM-DD` | No | `format: date`; bad value → `422` |
-| `end_date` | `string` \| omitted | `YYYY-MM-DD` | No | Frontend: `>= start_date` when both set |
+| Param | Type | Valid values | Required (product) | Default (API) | Constraints |
+|-------|------|--------------|--------------------|---------------|-------------|
+| `operation_type` | enum string | `income` \| `outcome` | **Yes** — always `income` | `outcome` | Omitting yields outcome totals — **invalid for this page** |
+| `limit` | integer | `1`–`20` | **Yes** — always `5` | `5` | Outside range → `422` |
+| `business_type` | enum string | `B2B` \| `B2C` | **Yes** per call | null | Exact casing; one request per segment |
+| `start_date` | string \| omitted | `YYYY-MM-DD` | No | omit | `format: date`; bad value → `422` |
+| `end_date` | string \| omitted | `YYYY-MM-DD` | No | omit | Frontend: `>= start_date` when both set |
 
-### 3.4 Edge case scenarios
+### 4. UI edge cases
 
-| # | Scenario | Required UI state / layout |
-|---|----------|----------------------------|
-| 1 | **Empty top-categories for one segment** — e.g. B2B returns `[]`, B2C returns rows | Side-by-side layout remains. B2B section shows explicit empty message (“No income categories for B2B.”). B2C table renders normally. Comparison chart still mounts: B2B series all zeros / no B2B bars; B2C series from data. |
-| 2 | **Network timeout on one or both top-categories calls** | Page chrome (nav, title) stays. Failed section(s) show section-level error; successful section can still render. Chart shows error or degrades to available series only — never a silent blank page. Preserve error detail for debugging. |
-| 3 | **Facets omit a business type** (e.g. `business_types` lacks `B2C`) | Do not pretend the missing segment exists: hide that column or show “Not available in data.” Still allow fetching top-categories only for types present in facets (or show unavailable without calling). |
-| 4 | **Both segments empty `[]`** | Both tables show explicit empty states. Single comparison chart shows chart empty state (“No data available to display”), not two empty chart cards. |
+| # | API / data edge case | Exact UI render |
+|---|----------------------|-----------------|
+| 1 | **Empty top-5 for one segment** — e.g. B2B `[]`, B2C has rows | Keep two-panel grid. B2B panel: heading `B2B` + body text `No income categories for B2B.` (no header-only table). B2C panel: normal 3-column ranking table. Shared chart still mounts; B2B series values are `0` where categories exist only on B2C (and vice versa). |
+| 2 | **Both segments empty `[]`** | Both panels show their empty messages (`No income categories for B2B.` / `No income categories for B2C.`). Single comparison chart card body: `No data available to display` (no bars). |
+| 3 | **Timeout / non-OK on one top-categories call** | Failed panel: `<p role="alert">` with error text; heading remains. Other panel renders normally if successful. Chart uses available series or shows chart-level error — never a blank page with no explanation. |
+| 4 | **Facets omit a business type** | Hide that panel or show `Not available in data.` Do not invent empty ranking data for a missing segment. Optional subtitle still uses `Available data: {min_date} → {max_date}` when facets succeed. |
 
----
+**Comparison chart data series (contract reminder):**
 
-## Cross-cutting contract rules
-
-1. **No request bodies** on any consumed endpoint (OpenAPI: query-only GETs).
-2. **`422` responses** use schema `HTTPValidationError` (`detail` array). Frontend must treat non-OK as failure and must not ignore `response.ok`.
-3. **Type sources of truth for implementers:** `frontend/specs/api-types.ts` and `frontend/specs/param-types.ts`; wire names must match OpenAPI/Pydantic field names (`snake_case`).
-4. **Proxy:** relative `/api` → backend `:8000` (`frontend/vite.config.ts`). Interactive schema browser: `http://localhost:8000/docs`.
+| Series | Meaning |
+|--------|---------|
+| `B2B` | Income `total_amount` by category from `business_type=B2B` top-5 response (`0` if category absent) |
+| `B2C` | Income `total_amount` by category from `business_type=B2C` top-5 response (`0` if category absent) |
 
 ---
 
-## Spec index
+## Cross-cutting rules
 
-| File | Purpose |
-|------|---------|
-| [`README.md`](./README.md) | This data contract documentation |
-| [`date-range.md`](./date-range.md) | Feature behavior / acceptance |
-| [`anomaly-alerts.md`](./anomaly-alerts.md) | Feature behavior / acceptance |
-| [`b2bvsb2c.md`](./b2bvsb2c.md) | Feature behavior / acceptance |
-| [`api-types.ts`](./api-types.ts) | Response & view-model TypeScript |
-| [`param-types.ts`](./param-types.ts) | Query parameter TypeScript |
-| [`components.md`](./components.md) | Non-executable component architecture |
+1. No request bodies on any feature endpoint (OpenAPI: query-only GETs).
+2. Treat non-OK HTTP as failure; never ignore `response.ok`; never swallow errors in empty `.catch(() => …)`.
+3. Wire field names are `snake_case` to match OpenAPI/Pydantic.
+4. Interactive schema: `http://localhost:8000/docs`. Proxy: `frontend/vite.config.ts` (`/api` → `http://backend:8000`).
